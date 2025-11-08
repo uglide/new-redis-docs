@@ -730,39 +730,18 @@ Return self as the query object.
 
 ## HybridQuery
 
-### `class HybridQuery(text, text_field_name, vector, vector_field_name, text_scorer='BM25STD', filter_expression=None, alpha=0.7, dtype='float32', num_results=10, return_fields=None, stopwords='english', dialect=2)`
+### `class HybridQuery(*args, **kwargs)`
 
-Bases: `AggregationQuery`
+Bases: `AggregateHybridQuery`
 
-HybridQuery combines text and vector search in Redis.
-It allows you to perform a hybrid search using both text and vector similarity.
-It scores documents based on a weighted combination of text and vector similarity.
+Backward compatibility wrapper for AggregateHybridQuery.
 
-```python
-from redisvl.query import HybridQuery
-from redisvl.index import SearchIndex
+#### `Deprecated`
+Deprecated since version HybridQuery: is a backward compatibility wrapper around AggregateHybridQuery
+and will eventually be replaced with a new hybrid query implementation.
+To maintain current functionality please use AggregateHybridQuery directly.",
 
-index = SearchIndex.from_yaml("path/to/index.yaml")
-
-query = HybridQuery(
-    text="example text",
-    text_field_name="text_field",
-    vector=[0.1, 0.2, 0.3],
-    vector_field_name="vector_field",
-    text_scorer="BM25STD",
-    filter_expression=None,
-    alpha=0.7,
-    dtype="float32",
-    num_results=10,
-    return_fields=["field1", "field2"],
-    stopwords="english",
-    dialect=2,
-)
-
-results = index.query(query)
-```
-
-Instantiates a HybridQuery object.
+Instantiates a AggregateHybridQuery object.
 
 * **Parameters:**
   * **text** (*str*) – The text to search for.
@@ -785,6 +764,9 @@ Instantiates a HybridQuery object.
     set, or tuple of strings is provided then those will be used as stopwords.
     Defaults to "english". if set to "None" then no stopwords will be removed.
   * **dialect** (*int* *,* *optional*) – The Redis dialect version. Defaults to 2.
+  * **text_weights** (*Optional* *[* *Dict* *[* *str* *,* *float* *]* *]*) – The importance weighting of individual words
+    within the query text. Defaults to None, as no modifications will be made to the
+    text_scorer score.
 * **Raises:**
   * **ValueError** – If the text string is empty, or if the text string becomes empty after
         stopwords are removed.
@@ -922,6 +904,14 @@ Default is TFIDF.
 * **Return type:**
   *AggregateRequest*
 
+#### `set_text_weights(weights)`
+
+Set or update the text weights for the query.
+
+* **Parameters:**
+  * **text_weights** – Dictionary of word:weight mappings
+  * **weights** (*Dict* *[* *str* *,* *float* *]*)
+
 #### `sort_by(*fields, **kwargs)`
 
 Indicate how the results should be sorted. This can also be used for
@@ -975,9 +965,18 @@ Return the stopwords used in the query.
 :returns: The stopwords used in the query.
 :rtype: Set[str]
 
+#### `property text_weights: Dict[str, float]`
+
+Get the text weights.
+
+* **Returns:**
+  weight mappings.
+* **Return type:**
+  Dictionary of word
+
 ## TextQuery
 
-### `class TextQuery(text, text_field_name, text_scorer='BM25STD', filter_expression=None, return_fields=None, num_results=10, return_score=True, dialect=2, sort_by=None, in_order=False, params=None, stopwords='english')`
+### `class TextQuery(text, text_field_name, text_scorer='BM25STD', filter_expression=None, return_fields=None, num_results=10, return_score=True, dialect=2, sort_by=None, in_order=False, params=None, stopwords='english', text_weights=None)`
 
 Bases: `BaseQuery`
 
@@ -1038,6 +1037,9 @@ A query for running a full text search, along with an optional filter expression
     a default set of stopwords for that language will be used. Users may specify
     their own stop words by providing a List or Set of words. if set to None,
     then no words will be removed. Defaults to ‘english’.
+  * **text_weights** (*Optional* *[* *Dict* *[* *str* *,* *float* *]* *]*) – The importance weighting of individual words
+    within the query text. Defaults to None, as no modifications will be made to the
+    text_scorer score.
 * **Raises:**
   * **ValueError** – if stopwords language string cannot be loaded.
   * **TypeError** – If stopwords is not a valid iterable set of strings.
@@ -1184,6 +1186,14 @@ Set the filter expression for the query.
 * **Raises:**
   **TypeError** – If filter_expression is not a valid FilterExpression or string.
 
+#### `set_text_weights(weights)`
+
+Set or update the text weights for the query.
+
+* **Parameters:**
+  * **text_weights** – Dictionary of word:weight mappings
+  * **weights** (*Dict* *[* *str* *,* *float* *]*)
+
 #### `slop(slop)`
 
 Allow a maximum of N intervening non matched terms between
@@ -1288,6 +1298,15 @@ Get the text field name(s) - for backward compatibility.
 * **Returns:**
   Either a single field name string (if only one field with weight 1.0)
   or a dictionary of field:weight mappings.
+
+#### `property text_weights: Dict[str, float]`
+
+Get the text weights.
+
+* **Returns:**
+  weight mappings.
+* **Return type:**
+  Dictionary of word
 
 ## FilterQuery
 
@@ -1790,3 +1809,242 @@ Return the query parameters.
 #### `property query: BaseQuery`
 
 Return self as the query object.
+
+## MultiVectorQuery
+
+### `class MultiVectorQuery(vectors, return_fields=None, filter_expression=None, num_results=10, dialect=2)`
+
+Bases: `AggregationQuery`
+
+MultiVectorQuery allows for search over multiple vector fields in a document simultaneously.
+The final score will be a weighted combination of the individual vector similarity scores
+following the formula:
+
+score = (w_1 \* score_1 + w_2 \* score_2 + w_3 \* score_3 + … )
+
+Vectors may be of different size and datatype, but must be indexed using the ‘cosine’ distance_metric.
+
+```python
+from redisvl.query import MultiVectorQuery, Vector
+from redisvl.index import SearchIndex
+
+index = SearchIndex.from_yaml("path/to/index.yaml")
+
+vector_1 = Vector(
+    vector=[0.1, 0.2, 0.3],
+    field_name="text_vector",
+    dtype="float32",
+    weight=0.7,
+)
+vector_2 = Vector(
+    vector=[0.5, 0.5],
+    field_name="image_vector",
+    dtype="bfloat16",
+    weight=0.2,
+)
+vector_3 = Vector(
+    vector=[0.1, 0.2, 0.3],
+    field_name="text_vector",
+    dtype="float64",
+    weight=0.5,
+)
+
+query = MultiVectorQuery(
+    vectors=[vector_1, vector_2, vector_3],
+    filter_expression=None,
+    num_results=10,
+    return_fields=["field1", "field2"],
+    dialect=2,
+)
+
+results = index.query(query)
+```
+
+Instantiates a MultiVectorQuery object.
+
+* **Parameters:**
+  * **vectors** (*Union* *[*[*Vector*]({{< relref "vector/#vector" >}}) *,* *List* *[*[*Vector*]({{< relref "vector/#vector" >}}) *]* *]*) – The Vectors to perform vector similarity search.
+  * **return_fields** (*Optional* *[* *List* *[* *str* *]* *]* *,* *optional*) – The fields to return. Defaults to None.
+  * **filter_expression** (*Optional* *[* *Union* *[* *str* *,* [*FilterExpression*]({{< relref "filter/#filterexpression" >}}) *]* *]*) – The filter expression to use.
+    Defaults to None.
+  * **num_results** (*int* *,* *optional*) – The number of results to return. Defaults to 10.
+  * **dialect** (*int* *,* *optional*) – The Redis dialect version. Defaults to 2.
+
+#### `add_scores()`
+
+If set, includes the score as an ordinary field of the row.
+
+* **Return type:**
+  *AggregateRequest*
+
+#### `apply(**kwexpr)`
+
+Specify one or more projection expressions to add to each result
+
+### `Parameters`
+
+- **kwexpr**: One or more key-value pairs for a projection. The key is
+  : the alias for the projection, and the value is the projection
+    expression itself, for example apply(square_root="sqrt(@foo)")
+
+* **Return type:**
+  *AggregateRequest*
+
+#### `dialect(dialect)`
+
+Add a dialect field to the aggregate command.
+
+- **dialect** - dialect version to execute the query under
+
+* **Parameters:**
+  **dialect** (*int*)
+* **Return type:**
+  *AggregateRequest*
+
+#### `filter(expressions)`
+
+Specify filter for post-query results using predicates relating to
+values in the result set.
+
+### `Parameters`
+
+- **fields**: Fields to group by. This can either be a single string,
+  : or a list of strings.
+
+* **Parameters:**
+  **expressions** (*str* *|* *List* *[* *str* *]*)
+* **Return type:**
+  *AggregateRequest*
+
+#### `group_by(fields, *reducers)`
+
+Specify by which fields to group the aggregation.
+
+### `Parameters`
+
+- **fields**: Fields to group by. This can either be a single string,
+  : or a list of strings. both cases, the field should be specified as
+    @field.
+- **reducers**: One or more reducers. Reducers may be found in the
+  : aggregation module.
+
+* **Parameters:**
+  * **fields** (*List* *[* *str* *]*)
+  * **reducers** (*Reducer* *|* *List* *[* *Reducer* *]*)
+* **Return type:**
+  *AggregateRequest*
+
+#### `limit(offset, num)`
+
+Sets the limit for the most recent group or query.
+
+If no group has been defined yet (via group_by()) then this sets
+the limit for the initial pool of results from the query. Otherwise,
+this limits the number of items operated on from the previous group.
+
+Setting a limit on the initial search results may be useful when
+attempting to execute an aggregation on a sample of a large data set.
+
+### `Parameters`
+
+- **offset**: Result offset from which to begin paging
+- **num**: Number of results to return
+
+Example of sorting the initial results:
+
+``
+AggregateRequest("@sale_amount:[10000, inf]")            .limit(0, 10)            .group_by("@state", r.count())
+``
+
+Will only group by the states found in the first 10 results of the
+query @sale_amount:[10000, inf]. On the other hand,
+
+``
+AggregateRequest("@sale_amount:[10000, inf]")            .limit(0, 1000)            .group_by("@state", r.count()            .limit(0, 10)
+``
+
+Will group all the results matching the query, but only return the
+first 10 groups.
+
+If you only wish to return a *top-N* style query, consider using
+sort_by() instead.
+
+* **Parameters:**
+  * **offset** (*int*)
+  * **num** (*int*)
+* **Return type:**
+  *AggregateRequest*
+
+#### `load(*fields)`
+
+Indicate the fields to be returned in the response. These fields are
+returned in addition to any others implicitly specified.
+
+### `Parameters`
+
+- **fields**: If fields not specified, all the fields will be loaded.
+
+Otherwise, fields should be given in the format of @field.
+
+* **Parameters:**
+  **fields** (*str*)
+* **Return type:**
+  *AggregateRequest*
+
+#### `scorer(scorer)`
+
+Use a different scoring function to evaluate document relevance.
+Default is TFIDF.
+
+* **Parameters:**
+  **scorer** (*str*) – The scoring function to use
+  (e.g. TFIDF.DOCNORM or BM25)
+* **Return type:**
+  *AggregateRequest*
+
+#### `sort_by(*fields, **kwargs)`
+
+Indicate how the results should be sorted. This can also be used for
+*top-N* style queries
+
+### `Parameters`
+
+- **fields**: The fields by which to sort. This can be either a single
+  : field or a list of fields. If you wish to specify order, you can
+    use the Asc or Desc wrapper classes.
+- **max**: Maximum number of results to return. This can be
+  : used instead of LIMIT and is also faster.
+
+Example of sorting by foo ascending and bar descending:
+
+``
+sort_by(Asc("@foo"), Desc("@bar"))
+``
+
+Return the top 10 customers:
+
+``
+AggregateRequest()            .group_by("@customer", r.sum("@paid").alias(FIELDNAME))            .sort_by(Desc("@paid"), max=10)
+``
+
+* **Parameters:**
+  **fields** (*str*)
+* **Return type:**
+  *AggregateRequest*
+
+#### `with_schema()`
+
+If set, the schema property will contain a list of [field, type]
+entries in the result object.
+
+* **Return type:**
+  *AggregateRequest*
+
+#### `property params: Dict[str, Any]`
+
+Return the parameters for the aggregation.
+
+* **Returns:**
+  The parameters for the aggregation.
+* **Return type:**
+  Dict[str, Any]
