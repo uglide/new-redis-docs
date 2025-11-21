@@ -1,8 +1,7 @@
 ---
 linkTitle: Schema
 title: Schema
-aliases:
-- /integrate/redisvl/api/schema
+url: '/develop/ai/redisvl/0.11.0/api/schema/'
 ---
 
 

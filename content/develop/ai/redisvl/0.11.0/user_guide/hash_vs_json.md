@@ -1,9 +1,8 @@
 ---
 linkTitle: Hash vs JSON storage
 title: Hash vs JSON Storage
-aliases:
-- /integrate/redisvl/user_guide/05_hash_vs_json
 weight: 05
+url: '/develop/ai/redisvl/0.11.0/user_guide/hash_vs_json/'
 ---
 
 
